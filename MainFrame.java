@@ -70,6 +70,7 @@ public class MainFrame extends JFrame{
         };
 
         patientTable = new JTable(tableModel);
+        patientTable.getTableHeader().setReorderingAllowed(false);
         JScrollPane listPane = new JScrollPane(patientTable);
 
         // Adjust Columns
