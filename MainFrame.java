@@ -4,6 +4,7 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.Comparator;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -13,7 +14,7 @@ import java.io.*;
 public class MainFrame extends JFrame{
 
     // File I/O
-    File patientsFile = new File("./patients.ser"); // This file may be stored outside of current folder
+    File patientsFile = new File("./patientData.ser"); // This file may be stored outside of current folder
     
     List<Patient> patients = new ArrayList<>();
 
@@ -60,9 +61,23 @@ public class MainFrame extends JFrame{
         // Initiate panels, etc.
         JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.TRAILING, 10, 13));
         JPanel bottomPanel = new JPanel();
-        tableModel = new DefaultTableModel(new String[] {"Name", "Details", "Priority"}, 0);
+
+        tableModel = new DefaultTableModel(new String[] {"Name", "Details", "Priority", "Patient ID"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
         patientTable = new JTable(tableModel);
         JScrollPane listPane = new JScrollPane(patientTable);
+
+        // Adjust Columns
+        patientTable.getColumnModel().getColumn(0).setMinWidth(100); // Name Column
+        patientTable.getColumnModel().getColumn(0).setMaxWidth(150);
+        patientTable.getColumnModel().getColumn(1).setPreferredWidth(250); // Details Column
+        patientTable.getColumnModel().getColumn(2).setMaxWidth(50); // Priority Column
+        patientTable.getColumnModel().getColumn(3).setMaxWidth(100); // ID Column
 
         // Panel Deco
         searchPanel.setBackground(new Color(0x1f1e33));
@@ -98,10 +113,6 @@ public class MainFrame extends JFrame{
 
     // Button Methods
     private void addPatient() {
-        if (searchToggled) {
-            displayErrorMessage("Please empty the Search Field first");
-            return;
-        }
 
         JTextField nameField = new JTextField();
         JTextField detailsField = new JTextField();
@@ -115,64 +126,69 @@ public class MainFrame extends JFrame{
 
         int option = JOptionPane.showConfirmDialog(this, fields, "Add Patient", JOptionPane.OK_CANCEL_OPTION);
 
-        if (option == JOptionPane.OK_OPTION && !nameField.getText().trim().isEmpty()) {
+        if (option == JOptionPane.OK_OPTION) {
+            if (nameField.getText().trim().isEmpty()) {
+                displayErrorMessage("Patient's name cannot be blank");
+                return;
+            }
+
             try {
                 String name = nameField.getText().trim();
                 String details = detailsField.getText().trim();
                 int priority = Integer.parseInt(priorityField.getText());
+                // Only uses the first 8 characters from generated UUID (11.7% chance of collision at 100,000 patients)
+                String patientID = UUID.randomUUID().toString().toUpperCase().substring(0, 8); 
+                for (Patient p: patients) {
+                    if (patientID.equals(p.getID())) patientID = patientID.toLowerCase(); // Current protocol for collision, modify if necessary
+                }
 
-                Patient newPatient = new Patient(name, details, priority);
+                Patient newPatient = new Patient(name, details, priority, patientID);
                 patients.add(newPatient);
 
                 saveData();
 
-                if (sortedByPriority) {displaySortedPatients();} else {displayPatients();}
+                refreshPage();
+                resetSearch();
             } catch (NumberFormatException e) {
                 displayErrorMessage("Priority must only be a number");
             }
-        } else {
-            displayErrorMessage("Name cannot be blank");
-        }
+        } 
     }
 
     private void deletePatient() {
-        if (searchToggled) {
-            displayErrorMessage("Please empty the Search Field first");
-            return;
-        }
-
-        if (sortedByPriority) {
-            displayErrorMessage("List must be unsorted first");
-            return;
-        }
-
         int selectedRow = patientTable.getSelectedRow();
 
         if (selectedRow != -1) {
-            patients.remove(selectedRow);
+            String selectedID = (String) patientTable.getValueAt(selectedRow, 3);
+
+            for (int i = 0; i < patients.size(); i++) {
+                if (selectedID.equals(patients.get(i).getID())) {
+                    patients.remove(i);
+                    break;
+                }
+            }
             saveData();
 
-            tableModel.removeRow(selectedRow);
+            refreshPage();
+            resetSearch();
         } else {
             displayErrorMessage("You must select a patient to delete.");
         }
     }
 
     private void updatePatient() {
-        if (searchToggled) {
-            displayErrorMessage("Please empty the Search Field first");
-            return;
-        }
-
-        if (sortedByPriority) {
-            displayErrorMessage("List must be unsorted first");
-            return;
-        }
 
         int selectedRow = patientTable.getSelectedRow();
 
         if (selectedRow != -1) {
-            Patient selectedPatient = patients.get(selectedRow);
+            String selectedID = (String) patientTable.getValueAt(selectedRow, 3);
+            Patient selectedPatient = null;
+
+            for (int i = 0; i < patients.size(); i++) {
+                if (selectedID.equals(patients.get(i).getID())) {
+                    selectedPatient = patients.get(i);
+                }
+            }
 
             JTextField nameField = new JTextField(selectedPatient.getName());
             JTextField detailsField = new JTextField(selectedPatient.getDetails());
@@ -186,7 +202,12 @@ public class MainFrame extends JFrame{
 
             int option = JOptionPane.showConfirmDialog(this, fields, "Edit Patient", JOptionPane.OK_CANCEL_OPTION);
 
-            if (option == JOptionPane.OK_OPTION && !nameField.getText().trim().isEmpty()) {
+            if (option == JOptionPane.OK_OPTION) {
+                if (nameField.getText().trim().isEmpty()) {
+                    displayErrorMessage("Patient's name cannot be blank");
+                    return;
+                }
+
                 try {
                     selectedPatient.setName(nameField.getText().trim());
                     selectedPatient.setDetails(detailsField.getText().trim());
@@ -194,14 +215,11 @@ public class MainFrame extends JFrame{
 
                     saveData();
 
-                    tableModel.setValueAt(selectedPatient.getName(), selectedRow, 0);
-                    tableModel.setValueAt(selectedPatient.getDetails(), selectedRow, 1);
-                    tableModel.setValueAt(selectedPatient.getPriority(), selectedRow, 2);
+                    refreshPage();
+                    resetSearch();
                 } catch (NumberFormatException e) {
                     displayErrorMessage("Priority must only be a number.");
                 }
-            } else {
-                displayErrorMessage("Name cannot be blank");
             }
 
         } else {
@@ -210,14 +228,14 @@ public class MainFrame extends JFrame{
     }
 
     private void searchPatients() {
-        // Search field modified for case insensivity
+        // Search field text modified for case insensivity
         String name = searchField.getText().toLowerCase().strip();
 
         if (name != null && !name.trim().isEmpty()) {
             tableModel.setRowCount(0);
             for (Patient p: patients) {
                 if (p.getName().toLowerCase().contains(name)) {
-                    tableModel.addRow(new Object[] {p.getName(), p.getDetails(), p.getPriority()});
+                    tableModel.addRow(new Object[] {p.getName(), p.getDetails(), p.getPriority(), p.getID()});
                 }
             }
             // Priority sorting is set to false as to not break the data
@@ -231,14 +249,10 @@ public class MainFrame extends JFrame{
     }
 
     private void sortPatients() {
-        if (searchToggled) {
-            displayErrorMessage("Please empty the Search Field first");
-            return;
-        }
-
         if (!sortedByPriority) {
             displaySortedPatients();
             sortedByPriority = true;
+            resetSearch();
         } else {
             displayPatients();
             sortedByPriority = false;
@@ -254,24 +268,38 @@ public class MainFrame extends JFrame{
     private void displayPatients() {
         tableModel.setRowCount(0);
         for (Patient p: patients) {
-            tableModel.addRow(new Object[] {p.getName(), p.getDetails(), p.getPriority()});
+            tableModel.addRow(new Object[] {p.getName(), p.getDetails(), p.getPriority(), p.getID()});
         }
     }
 
     private void displaySortedPatients() {
         tableModel.setRowCount(0);
 
+        // A new Array List is always initialized for toggleability
         List<Patient> sortedPatients = new ArrayList<>();
 
         for (Patient p: patients) {
-            sortedPatients.add(new Patient(p.getName(), p.getDetails(), p.getPriority()));
+            sortedPatients.add(new Patient(p.getName(), p.getDetails(), p.getPriority(), p.getID()));
         }
 
         sortedPatients.sort(Comparator.comparingInt(Patient::getPriority));
 
         for (Patient p: sortedPatients) {
-            tableModel.addRow(new Object[] {p.getName(), p.getDetails(), p.getPriority()});
+            tableModel.addRow(new Object[] {p.getName(), p.getDetails(), p.getPriority(), p.getID()});
         }
+    }
+
+    private void refreshPage() {
+        if (sortedByPriority) {
+            displaySortedPatients();
+        } else {
+            displayPatients();
+        }
+    }
+
+    private void resetSearch() {
+        searchToggled = false;
+        searchField.setText("");
     }
 
 
