@@ -242,7 +242,7 @@ public class MainFrame extends JFrame{
             searchToggled = true;
             sortedByPriority = false;
         } else {
-            displayPatients();
+            refreshPage();
             searchToggled = false;
         }
         
